@@ -157,7 +157,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish kogito-runtimes artifacts
-        run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DskipTests -Dversion.org.kie=${{ env.LOGIC_VERSION }}
+        run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DskipTests -Dfull -Dversion.org.kie=${{ env.LOGIC_VERSION }}
         working-directory: kogito-runtimes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
