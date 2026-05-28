@@ -67,6 +67,26 @@ jobs:
         with:
           python-version: 3.x
 
+      - name: Print Workflow Inputs
+        run: |
+          echo "=== Workflow Input Parameters ==="
+          echo "LOGIC_VERSION: ${{ inputs.LOGIC_VERSION }}"
+          echo "GITHUB_ORGANISATION: ${{ inputs.GITHUB_ORGANISATION }}"
+          echo "GITHUB_ORGANISATION_KIE_TOOLS: ${{ inputs.GITHUB_ORGANISATION_KIE_TOOLS }}"
+          echo "BRANCH_TO_BUILD: ${{ inputs.BRANCH_TO_BUILD }}"
+          echo "MAVEN_REPOSITORY_URL: ${{ inputs.MAVEN_REPOSITORY_URL }}"
+          echo "force_cleanup_of_built_snapshot_version: ${{ inputs.force_cleanup_of_built_snapshot_version }}"
+          echo ""
+          echo "=== Resolved Environment Variables ==="
+          echo "LOGIC_VERSION (env): ${{ env.LOGIC_VERSION }}"
+          echo "GITHUB_ORGANISATION (env): ${{ env.GITHUB_ORGANISATION }}"
+          echo "GITHUB_ORGANISATION_KIE_TOOLS (env): ${{ env.GITHUB_ORGANISATION_KIE_TOOLS }}"
+          echo "BRANCH_TO_BUILD (env): ${{ env.BRANCH_TO_BUILD }}"
+          echo "MAVEN_REPOSITORY_URL (env): ${{ env.MAVEN_REPOSITORY_URL }}"
+          echo "GITHUB_USERNAME (env): ${{ env.GITHUB_USERNAME }}"
+          echo "FORCE_CLEANUP (env): ${{ env.FORCE_CLEANUP }}"
+          echo "=================================="
+
       - name: Checkout Drools
         uses: actions/checkout@v6
         with:
