@@ -133,6 +133,12 @@ jobs:
       - name: Update kie-tools version and prepare repository
         run: |
           python3 ../scripts/version-update/update-maven-versions.py ${{ env.LOGIC_VERSION }} --exclude "*/maven-base/*" "*/serverless-logic-web-tools-swf-deployment-quarkus-app/*"
+          
+          # Rewrite distributionManagement URLs in all pom.xml files to use custom Maven repository
+          # This is necessary because -DaltDeploymentRepository doesn't work for the complex kie-tools structure
+          # Only replaces URLs that match the default repository URL
+          find . -name "pom.xml" -type f -exec sed -i '' \
+            '/<distributionManagement>/,/<\/distributionManagement>/ s|<url>https://maven\.pkg\.github\.com/kubesmarts/logic-maven-repository</url>|<url>${{ env.MAVEN_REPOSITORY_URL }}</url>|g' {} \;
         working-directory: kie-tools
 
       - name: Update kie-tools maven-base
@@ -171,25 +177,25 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish Drools artifacts
-        run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml
+        run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DaltDeploymentRepository=github::${{ env.MAVEN_REPOSITORY_URL }}
         working-directory: drools
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish kogito-runtimes artifacts
-        run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DskipTests -Dfull -Dversion.org.kie=${{ env.LOGIC_VERSION }}
+        run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DskipTests -Dfull -Dversion.org.kie=${{ env.LOGIC_VERSION }} -DaltDeploymentRepository=github::${{ env.MAVEN_REPOSITORY_URL }}
         working-directory: kogito-runtimes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish kogito-apps artifacts
-        run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DskipTests -Dversion.org.kie=${{ env.LOGIC_VERSION }}
+        run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DskipTests -Dversion.org.kie=${{ env.LOGIC_VERSION }} -DaltDeploymentRepository=github::${{ env.MAVEN_REPOSITORY_URL }}
         working-directory: kogito-apps
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish kie-tools artifacts
-        run: mvn --batch-mode clean deploy -s ${{ github.workspace }}/.github/configs/settings.xml -DskipTests -Drevision=${{ env.LOGIC_VERSION }} -Dversion.org.kie.kogito=${{ env.LOGIC_VERSION }} -Dskip.maven.deploy.in.pnpm.wrapped.artifacts=false
+        run: mvn --batch-mode clean deploy -s ${{ github.workspace }}/.github/configs/settings.xml -DskipTests -Drevision=${{ env.LOGIC_VERSION }} -Dversion.org.kie.kogito=${{ env.LOGIC_VERSION }} -Dskip.maven.deploy.in.pnpm.wrapped.artifacts=false -DaltDeploymentRepository=github::${{ env.MAVEN_REPOSITORY_URL }}
         working-directory: kie-tools
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
