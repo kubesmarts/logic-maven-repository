@@ -136,7 +136,7 @@ jobs:
           
           # Rewrite distributionManagement URLs in all pom.xml files to use custom Maven repository
           # This is necessary because -DaltDeploymentRepository doesn't work for the complex kie-tools structure
-          ../scripts/replace-distribution-management-url.sh . \
+          ../scripts/replace-distribution-management-url.sh "$PWD" \
             "https://maven.pkg.github.com/kubesmarts/logic-maven-repository" \
             "${{ env.MAVEN_REPOSITORY_URL }}"
         working-directory: kie-tools
