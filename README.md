@@ -36,7 +36,10 @@ Add the following to your `~/.m2/settings.xml` file:
   
   <servers>
     <server>
-      <id>github-logic</id>
+      <!-- github is the repository ID used directly in Logic code repositories. 
+           So for building some of the code repositories using the published snapshots, 
+           it is enough to have only the <servers> section in the settings.xml. -->
+      <id>github</id>
       <username>YOUR_GITHUB_USERNAME</username>
       <password>YOUR_GITHUB_PERSONAL_ACCESS_TOKEN</password>
     </server>
@@ -44,10 +47,10 @@ Add the following to your `~/.m2/settings.xml` file:
 
   <profiles>
     <profile>
-      <id>github-logic</id>
+      <id>github</id>
       <repositories>
         <repository>
-          <id>github-logic</id>
+          <id>github</id>
           <url>https://maven.pkg.github.com/kubesmarts/logic-maven-repository</url>
           <snapshots>
             <enabled>true</enabled>
@@ -58,7 +61,7 @@ Add the following to your `~/.m2/settings.xml` file:
   </profiles>
 
   <activeProfiles>
-    <activeProfile>github-logic</activeProfile>
+    <activeProfile>github</activeProfile>
   </activeProfiles>
 </settings>
 ```
@@ -89,7 +92,7 @@ You can also configure the repository directly in your project's `pom.xml`:
 ```xml
 <repositories>
   <repository>
-    <id>github-logic</id>
+    <id>github</id>
     <url>https://maven.pkg.github.com/kubesmarts/logic-maven-repository</url>
     <snapshots>
       <enabled>true</enabled>
