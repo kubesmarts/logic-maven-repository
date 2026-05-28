@@ -44,10 +44,7 @@ fi
 # The sed command operates only within <distributionManagement>...</distributionManagement> sections
 # and replaces URLs matching the old repository URL with the new URL
 echo "Processing pom.xml files in $TARGET_DIR..."
-find "$TARGET_DIR" -name "pom.xml" -type f -print0 | while IFS= read -r -d '' file; do
-    echo "  Processing: $file"
-    sed -i '' -e "/<distributionManagement>/,/<\/distributionManagement>/ s|<url>$OLD_REPO_URL</url>|<url>$NEW_REPO_URL</url>|g" "$file"
-done
+find "$TARGET_DIR" -name "pom.xml" -print0 | xargs -0 sed -i -e "/<distributionManagement>/,/<\/distributionManagement>/s|<url>$OLD_REPO_URL</url>|<url>$NEW_REPO_URL</url>|g"
 
 echo "✓ Updated distributionManagement URLs in pom.xml files"
 
