@@ -161,7 +161,16 @@ fetch_packages() {
             exit 1
         fi
         
-        # Validate JSON response and check for API errors
+        # Check for 404 error BEFORE JSON validation to allow fallback
+        # This handles valid JSON error responses like {"message":"Not Found","status":"404"}
+        if echo "${response}" | grep -q '"status":"404"' && [ -z "${ACCOUNT_TYPE}" ] && [ "${tried_user_endpoint}" = "false" ]; then
+            log "INFO" "Organization endpoint returned 404, trying user endpoint..."
+            ACCOUNT_TYPE="users"
+            tried_user_endpoint=true
+            continue  # Retry with user endpoint
+        fi
+        
+        # Validate JSON response
         if ! echo "${response}" | jq empty 2>/dev/null; then
             log "ERROR" "API returned non-JSON response"
             log "ERROR" "Raw API Response (first 500 chars): $(sanitize_output "${response:0:500}")"
@@ -174,15 +183,7 @@ fetch_packages() {
             local error_message=$(echo "${response}" | jq -r '.message' 2>/dev/null)
             local status_code=$(echo "${response}" | jq -r '.status // "unknown"' 2>/dev/null)
             
-            # If we get 404 on organization endpoint and haven't tried user endpoint yet
-            if [ "${status_code}" = "404" ] && [ -z "${ACCOUNT_TYPE}" ] && [ "${tried_user_endpoint}" = "false" ]; then
-                log "INFO" "Organization endpoint returned 404, trying user endpoint..."
-                ACCOUNT_TYPE="users"
-                tried_user_endpoint=true
-                continue  # Retry with user endpoint
-            fi
-            
-            # Otherwise, it's a real error
+            # At this point, if we still have an error, it's a real error
             log "ERROR" "API error: ${error_message} (status: ${status_code})"
             
             # Check for authentication issues
