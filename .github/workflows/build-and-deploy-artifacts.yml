@@ -98,8 +98,6 @@ jobs:
       GITHUB_ORGANISATION: ${{ inputs.GITHUB_ORGANISATION }}
       GITHUB_ORGANISATION_KIE_TOOLS: ${{ inputs.GITHUB_ORGANISATION_KIE_TOOLS }}
       BRANCH_TO_BUILD: ${{ inputs.BRANCH_TO_BUILD }}
-      MAVEN_REPOSITORY_ORGANISATION: baldimir
-      MAVEN_REPOSITORY_URL: https://maven.pkg.github.com/baldimir/logic-maven-repository
     secrets: inherit
 
   cleanup:
@@ -111,7 +109,7 @@ jobs:
       - name: Cleanup snapshots after publish
         id: cleanup-snapshots
         run: |
-          scripts/delete-package-version.sh --owner "baldimir" "${{ inputs.LOGIC_VERSION }}"
+          scripts/delete-package-version.sh "${{ inputs.LOGIC_VERSION }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
@@ -124,6 +122,4 @@ jobs:
       GITHUB_ORGANISATION: ${{ inputs.GITHUB_ORGANISATION }}
       GITHUB_ORGANISATION_KIE_TOOLS: ${{ inputs.GITHUB_ORGANISATION_KIE_TOOLS }}
       BRANCH_TO_BUILD: ${{ inputs.BRANCH_TO_BUILD }}
-      MAVEN_REPOSITORY_ORGANISATION: baldimir
-      MAVEN_REPOSITORY_URL: https://maven.pkg.github.com/baldimir/logic-maven-repository
     secrets: inherit
