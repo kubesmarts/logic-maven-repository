@@ -145,6 +145,7 @@ fetch_packages() {
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "${api_url}" 2>&1)
+        response=$(sanitize_output "${response}")
         local gh_exit_code=$?
         
         # Check if gh command failed
@@ -175,7 +176,8 @@ fetch_packages() {
         # Validate JSON response
         if ! echo "${response}" | jq empty 2>/dev/null; then
             log "ERROR" "API returned non-JSON response"
-            log "ERROR" "Raw API Response (first 500 chars): $(sanitize_output "${response:0:500}")"
+            local sanitized_response=$(sanitize_output "${response}")
+            log "ERROR" "Raw API Response (first 500 chars): ${sanitized_response:0:500}"
             exit 1
         fi
         
@@ -267,6 +269,7 @@ delete_package_version() {
         -H "Accept: application/vnd.github+json" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
         "${api_endpoint}" 2>&1)
+    versions_response=$(sanitize_output "${versions_response}")
     local api_exit_code=$?
     
     if [ ${api_exit_code} -ne 0 ]; then
@@ -291,6 +294,7 @@ delete_package_version() {
                 -H "Accept: application/vnd.github+json" \
                 -H "X-GitHub-Api-Version: 2022-11-28" \
                 "/${ACCOUNT_TYPE}/${OWNER}/packages/maven/${encoded_package_name}/versions/${version_id}" 2>&1)
+            response=$(sanitize_output "${response}")
             
             if [ $? -eq 0 ]; then
                 log "SUCCESS" "Deleted ${package_name}:${VERSION}"
