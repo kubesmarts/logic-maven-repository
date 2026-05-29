@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       LOGIC_VERSION:
-        description: "LOGIC version to be built and published."
+        description: "Base version for the build. On Sundays it is used as a base for a weekly build, other days, it is directly used as a build version. "
         type: string
         required: false
         default: 111-SNAPSHOT
@@ -25,12 +25,12 @@ on:
         required: false
         default: main
       force_cleanup_of_snapshot:
-        description: "Force cleanup of built LOGIC_VERSION version regardless of schedule, if it is a SNAPSHOT version (overrides the Monday of even weeks schedule)."
+        description: "Force cleanup of built LOGIC_VERSION version regardless of schedule, if it is a SNAPSHOT version (overrides the Sunday cleanup during weekly builds)."
         type: boolean
         required: false
         default: false
       force_weekly_build:
-        description: "Force weekly build regardless of schedule (overrides the Monday schedule for weekly builds)."
+        description: "Force weekly build regardless of schedule (overrides the Monday schedule for weekly builds). Doesn't influence the cleanup behaviour. So to also do the cleanup when overriding, please force also cleanup."
         type: boolean
         required: false
         default: false
@@ -125,8 +125,8 @@ jobs:
         run: |
           WEEK_NUM=$(date +%V)
           DAY_OF_WEEK=$(date +%u)  # 1=Monday, 7=Sunday
-          IS_MONDAY=$((DAY_OF_WEEK == 1))
-          echo "is_weekly_publish_day=$IS_MONDAY" >> $GITHUB_OUTPUT
+          IS_DAY_OF_WEEKLY=$((DAY_OF_WEEK == 7))
+          echo "is_weekly_publish_day=$IS_DAY_OF_WEEKLY" >> $GITHUB_OUTPUT
 
       - name: Calculate weekly build version
         if: ${{ steps.isweeklypublish.outputs.is_weekly_publish_day == '1' || env.FORCE_WEEKLY_BUILD == 'true' }}
