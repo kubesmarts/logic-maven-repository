@@ -1,0 +1,172 @@
+name: Build and publish LOGIC jars to the GitHub Maven Repository
+on:
+  workflow_call:
+    inputs:
+      LOGIC_VERSION:
+        description: "Base version for the build. On Sundays it is used as a base for a weekly build, other days, it is directly used as a build version. "
+        type: string
+        required: false
+        default: 111-SNAPSHOT
+      GITHUB_ORGANISATION:
+        description: "GitHub organisation that contains the LOGIC repositories."
+        type: string
+        required: false
+        default: kiegroup
+      GITHUB_ORGANISATION_KIE_TOOLS:
+        description: "GitHub organisation that contains the LOGIC kie-tools repository."
+        type: string
+        required: false
+        default: kubesmarts
+      BRANCH_TO_BUILD:
+        description: "Branch from which the artifacts should be published."
+        type: string
+        required: false
+        default: main
+      MAVEN_REPOSITORY_ORGANISATION:
+        description: "GitHub organisation that owns the target Maven repository package."
+        type: string
+        required: false
+        default: baldimir
+      MAVEN_REPOSITORY_URL:
+        description: "GitHub Packages Maven repository URL used for distributionManagement rewrites and Maven deploy."
+        type: string
+        required: false
+        default: https://maven.pkg.github.com/baldimir/logic-maven-repository
+    secrets:
+      GITHUB_TOKEN:
+        required: true
+# TODO - Implement optional tests execution
+#      RUN_TESTS:
+#        description: "If true, also tests will be run. "
+#        type: boolean
+#        required: false
+#        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: 3.x
+
+      - name: Print Workflow Inputs
+        run: |
+          echo "LOGIC_VERSION: ${{ inputs.LOGIC_VERSION }}"
+          echo "GITHUB_ORGANISATION: ${{ inputs.GITHUB_ORGANISATION }}"
+          echo "GITHUB_ORGANISATION_KIE_TOOLS: ${{ inputs.GITHUB_ORGANISATION_KIE_TOOLS }}"
+          echo "BRANCH_TO_BUILD: ${{ inputs.BRANCH_TO_BUILD }}"
+          echo "MAVEN_REPOSITORY_ORGANISATION: ${{ inputs.MAVEN_REPOSITORY_ORGANISATION }}"
+          echo "MAVEN_REPOSITORY_URL: ${{ inputs.MAVEN_REPOSITORY_URL }}"
+
+      - name: Checkout Drools
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.GITHUB_ORGANISATION }}/drools
+          path: drools
+          ref: ${{ inputs.BRANCH_TO_BUILD }}
+
+      - name: Checkout kogito-runtimes
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.GITHUB_ORGANISATION }}/kogito-runtimes
+          path: kogito-runtimes
+          ref: ${{ inputs.BRANCH_TO_BUILD }}
+
+      - name: Checkout kogito-apps
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.GITHUB_ORGANISATION }}/kogito-apps
+          path: kogito-apps
+          ref: ${{ inputs.BRANCH_TO_BUILD }}
+
+      - name: Checkout kubesmarts/kie-tools
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.GITHUB_ORGANISATION_KIE_TOOLS }}/kie-tools
+          path: kie-tools
+          ref: ${{ inputs.BRANCH_TO_BUILD }}
+
+      - name: Update Drools version and prepare repository
+        run: |
+          python3 ../scripts/version-update/update-maven-versions.py ${{ inputs.LOGIC_VERSION }} --exclude "*/kie-ci-test-jars/*"
+        working-directory: drools
+
+      - name: Update kogito-runtimes version
+        run: |
+          python3 ../scripts/version-update/update-maven-versions.py ${{ inputs.LOGIC_VERSION }}
+        working-directory: kogito-runtimes
+
+      - name: Update kogito-apps version
+        run: |
+          python3 ../scripts/version-update/update-maven-versions.py ${{ inputs.LOGIC_VERSION }} --update-root-parent
+        working-directory: kogito-apps
+
+      - name: Update kie-tools version and prepare repository
+        run: |
+          python3 ../scripts/version-update/update-maven-versions.py ${{ inputs.LOGIC_VERSION }} --exclude "*/maven-base/*" "*/serverless-logic-web-tools-swf-deployment-quarkus-app/*"
+          
+          # Rewrite distributionManagement URLs in all pom.xml files to use custom Maven repository
+          # This is necessary because -DaltDeploymentRepository doesn't work for the complex kie-tools structure
+          ../scripts/replace-distribution-management-url.sh "$PWD" \
+            "https://maven.pkg.github.com/kubesmarts/logic-maven-repository" \
+            "${{ inputs.MAVEN_REPOSITORY_URL }}"
+        working-directory: kie-tools
+
+      - name: Update kie-tools maven-base
+        run: |
+          python3 ../../../scripts/version-update/update-maven-versions.py ${{ inputs.LOGIC_VERSION }}
+          sed -i 's|<version\.org\.kie\.kogito>.*</version\.org\.kie\.kogito>|<version.org.kie.kogito>${project.version}</version.org.kie.kogito>|g' ./pom.xml
+        working-directory: kie-tools/packages/maven-base
+
+      - name: Update kie-tools serverless-logic-web-tools-swf-deployment-quarkus-app
+        run: |
+          python3 ../../../scripts/version-update/update-maven-versions.py ${{ inputs.LOGIC_VERSION }}
+        working-directory: kie-tools/packages/serverless-logic-web-tools-swf-deployment-quarkus-app
+
+
+      # TODO - remove the debugging mvn command - it builds only the bom and related modules now for debugging purposes.
+      - name: Build and publish Drools artifacts
+        run: mvn --batch-mode clean deploy -pl :bom -am -s ../.github/configs/settings.xml -DaltDeploymentRepository=github::${{ inputs.MAVEN_REPOSITORY_URL }}
+        working-directory: drools
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # - name: Build and publish kogito-runtimes artifacts
+      #   run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DskipTests -Dfull -Dversion.org.kie=${{ inputs.LOGIC_VERSION }} -DaltDeploymentRepository=github::${{ inputs.MAVEN_REPOSITORY_URL }}
+      #   working-directory: kogito-runtimes
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # - name: Build and publish kogito-apps artifacts
+      #   run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DskipTests -Dversion.org.kie=${{ inputs.LOGIC_VERSION }} -DaltDeploymentRepository=github::${{ inputs.MAVEN_REPOSITORY_URL }}
+      #   working-directory: kogito-apps
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # - name: Build and publish kie-tools artifacts
+      #   run: mvn --batch-mode clean deploy -s ${{ github.workspace }}/.github/configs/settings.xml -DskipTests -Drevision=${{ inputs.LOGIC_VERSION }} -Dversion.org.kie.kogito=${{ inputs.LOGIC_VERSION }} -Dskip.maven.deploy.in.pnpm.wrapped.artifacts=false -DaltDeploymentRepository=github::${{ inputs.MAVEN_REPOSITORY_URL }}
+      #   working-directory: kie-tools
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     MAVEN_ARGS: --settings=${{ github.workspace }}/.github/configs/settings.xml -Drevision=${{ inputs.LOGIC_VERSION }}
+      #     KIE_TOOLS_BUILD__mavenDeploySkip: false
+      #     DROOLS_AND_KOGITO__skip: true
+      #     KIE_TOOLS_BUILD__runTests: false
+      #     KIE_TOOLS_BUILD__runEndToEndTests: false
+      #     KIE_TOOLS_BUILD__buildContainerImages: false
+      #     KIE_TOOLS_BUILD__containerizedEndToEndTests: false
+      #     KIE_TOOLS_BUILD__ignoreTestFailures: true
+      #     KIE_TOOLS_BUILD__ignoreEndToEndTestFailures: true
+      #     DROOLS_AND_KOGITO__droolsRepoUrl: https://github.com/kiegroup/drools
+      #     DROOLS_AND_KOGITO__kogitoRuntimesRepoUrl: https://github.com/kiegroup/kogito-runtimes
+      #     DROOLS_AND_KOGITO__kogitoAppsRepoUrl: https://github.com/kiegroup/kogito-apps
