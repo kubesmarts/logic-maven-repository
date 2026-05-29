@@ -61,6 +61,18 @@ Examples:
 EOF
 }
 
+# Sanitization function to redact sensitive information
+sanitize_output() {
+    local text="$1"
+    # Redact common token patterns
+    text=$(echo "$text" | sed -E 's/(ghp_[a-zA-Z0-9]{36})/[REDACTED_TOKEN]/g')
+    text=$(echo "$text" | sed -E 's/(gho_[a-zA-Z0-9]{36})/[REDACTED_TOKEN]/g')
+    text=$(echo "$text" | sed -E 's/(github_pat_[a-zA-Z0-9_]{82})/[REDACTED_TOKEN]/g')
+    text=$(echo "$text" | sed -E 's/(Authorization: [Bb]earer [^ ]+)/Authorization: Bearer [REDACTED]/g')
+    text=$(echo "$text" | sed -E 's/(token["\s:=]+)([a-zA-Z0-9_-]+)/\1[REDACTED]/gi')
+    echo "$text"
+}
+
 # Unified logging function
 log() {
     local level="$1"
@@ -74,6 +86,9 @@ log() {
         WARNING) color="${YELLOW}" ;;
         INFO)    color="${CYAN}" ;;
     esac
+    
+    # Sanitize message before logging
+    message=$(sanitize_output "$message")
     
     echo -e "${timestamp} - ${color}${level}: ${message}${NC}" >&2
 }
@@ -113,35 +128,80 @@ fetch_packages() {
     while true; do
         local api_url="/orgs/${OWNER}/packages?package_type=${PACKAGE_TYPE}&per_page=${per_page}&page=${page}"
         
+        log "INFO" "Fetching page ${page} from API endpoint: ${api_url}"
+        
+        # Capture both stdout and stderr
         local response=$(gh api \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "${api_url}" 2>/dev/null)
+            "${api_url}" 2>&1)
         local gh_exit_code=$?
         
+        # Check if gh command failed
         if [ ${gh_exit_code} -ne 0 ]; then
-            log "ERROR" "Failed to fetch packages from API"
+            log "ERROR" "GitHub API request failed with exit code ${gh_exit_code}"
+            log "ERROR" "API Response: $(sanitize_output "${response}")"
+            
+            # Check for common authentication issues
+            if echo "${response}" | grep -qi "authentication\|unauthorized\|forbidden\|token"; then
+                log "ERROR" "Authentication issue detected. Please verify:"
+                log "ERROR" "  1. GH_TOKEN environment variable is set"
+                log "ERROR" "  2. Token has 'read:packages' and 'delete:packages' scopes"
+                log "ERROR" "  3. Token has access to organization '${OWNER}'"
+                log "ERROR" "  4. Run 'gh auth status' to check authentication"
+            fi
             exit 1
         fi
         
-        # Validate JSON first
+        # Validate JSON response
         if ! echo "${response}" | jq empty 2>/dev/null; then
-            log "ERROR" "Invalid JSON response from API"
-            break
+            log "ERROR" "API returned non-JSON response"
+            log "ERROR" "Raw API Response (first 500 chars): $(sanitize_output "${response:0:500}")"
+            
+            # Check if response looks like an error message
+            if echo "${response}" | grep -qi "error\|not found\|unauthorized\|forbidden"; then
+                log "ERROR" "API error detected in response"
+                
+                # Check for authentication issues
+                if echo "${response}" | grep -qi "authentication\|unauthorized\|forbidden\|token"; then
+                    log "ERROR" "Authentication issue detected. Please verify:"
+                    log "ERROR" "  1. GH_TOKEN environment variable is set"
+                    log "ERROR" "  2. Token has 'read:packages' and 'delete:packages' scopes"
+                    log "ERROR" "  3. Token has access to organization '${OWNER}'"
+                fi
+                
+                # Check for organization access issues
+                if echo "${response}" | grep -qi "not found"; then
+                    log "ERROR" "Organization '${OWNER}' not found or not accessible"
+                    log "ERROR" "Verify the organization name and token permissions"
+                fi
+            fi
+            exit 1
+        fi
+        
+        # Check if response is an array (expected format)
+        local response_type=$(echo "${response}" | jq -r 'type' 2>/dev/null)
+        if [ "${response_type}" != "array" ]; then
+            log "ERROR" "API response is not an array (got: ${response_type})"
+            log "ERROR" "Response content: $(sanitize_output "${response}")"
+            exit 1
         fi
         
         # Count packages in response
         local package_count=$(echo "${response}" | jq '. | length' 2>/dev/null)
+        log "INFO" "Page ${page} contains ${package_count} package(s)"
         
         # Extract package names from JSON response
-        local packages=$(echo "${response}" | jq -r '.[].name')
+        local packages=$(echo "${response}" | jq -r '.[].name' 2>&1)
         if [ $? -ne 0 ]; then
             log "ERROR" "Failed to parse package names with jq"
-            break
+            log "ERROR" "jq error: ${packages}"
+            exit 1
         fi
         
         # Check if we got any packages
         if [ -z "${packages}" ] || [ "${package_count}" = "0" ]; then
+            log "INFO" "No more packages found, stopping pagination"
             break
         fi
         
@@ -194,7 +254,7 @@ delete_package_version() {
                 log "SUCCESS" "Deleted ${package_name}:${VERSION}"
                 ((versions_deleted++))
             else
-                log "ERROR" "Failed to delete ${package_name}:${VERSION} - ${response}"
+                log "ERROR" "Failed to delete ${package_name}:${VERSION} - $(sanitize_output "${response}")"
             fi
             
             [ ${current} -lt ${total} ] && sleep ${DELAY_SECONDS}
