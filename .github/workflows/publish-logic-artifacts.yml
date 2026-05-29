@@ -32,9 +32,6 @@ on:
         type: string
         required: false
         default: https://maven.pkg.github.com/baldimir/logic-maven-repository
-    secrets:
-      GITHUB_TOKEN:
-        required: true
 # TODO - Implement optional tests execution
 #      RUN_TESTS:
 #        description: "If true, also tests will be run. "
