@@ -100,8 +100,7 @@ jobs:
       BRANCH_TO_BUILD: ${{ inputs.BRANCH_TO_BUILD }}
       MAVEN_REPOSITORY_ORGANISATION: baldimir
       MAVEN_REPOSITORY_URL: https://maven.pkg.github.com/baldimir/logic-maven-repository
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    secrets: inherit
 
   cleanup:
     needs: [prepare, build-and-deploy]
@@ -127,5 +126,4 @@ jobs:
       BRANCH_TO_BUILD: ${{ inputs.BRANCH_TO_BUILD }}
       MAVEN_REPOSITORY_ORGANISATION: baldimir
       MAVEN_REPOSITORY_URL: https://maven.pkg.github.com/baldimir/logic-maven-repository
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    secrets: inherit
