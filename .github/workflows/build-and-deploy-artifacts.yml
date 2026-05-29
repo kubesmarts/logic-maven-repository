@@ -24,13 +24,13 @@ on:
         type: string
         required: false
         default: main
-      MAVEN_REPOSITORY_URL:
-        description: "URL of the Maven repository where artifacts will be deployed."
-        type: string
-        required: false
-        default: https://maven.pkg.github.com/kubesmarts/logic-maven-repository
-      force_cleanup_of_built_snapshot_version:
+      force_cleanup_of_snapshot:
         description: "Force cleanup of built LOGIC_VERSION version regardless of schedule, if it is a SNAPSHOT version (overrides the Monday of even weeks schedule)."
+        type: boolean
+        required: false
+        default: false
+      force_weekly_build:
+        description: "Force weekly build regardless of schedule (overrides the Monday schedule for weekly builds)."
         type: boolean
         required: false
         default: false
@@ -43,12 +43,15 @@ on:
 
 env:
   LOGIC_VERSION: ${{ inputs.LOGIC_VERSION || '111-SNAPSHOT' }}
+  SNAPSHOT_VERSION: '111-SNAPSHOT'
+  MAVEN_REPOSITORY_ORGANISATION: 'baldimir'
   GITHUB_ORGANISATION: ${{ inputs.GITHUB_ORGANISATION || 'kiegroup' }}
   GITHUB_ORGANISATION_KIE_TOOLS: ${{ inputs.GITHUB_ORGANISATION_KIE_TOOLS || 'kubesmarts' }}
   BRANCH_TO_BUILD: ${{ inputs.BRANCH_TO_BUILD || 'main' }}
-  MAVEN_REPOSITORY_URL: ${{ inputs.MAVEN_REPOSITORY_URL || 'https://maven.pkg.github.com/kubesmarts/logic-maven-repository' }}
+  MAVEN_REPOSITORY_URL: 'https://maven.pkg.github.com/baldimir/logic-maven-repository'
   GITHUB_USERNAME: ${{ inputs.GITHUB_ORGANISATION || 'kiegroup' }}
-  FORCE_CLEANUP: ${{ inputs.force_cleanup_of_built_snapshot_version == true }}
+  FORCE_CLEANUP: ${{ inputs.force_cleanup_of_snapshot == true }}
+  FORCE_WEEKLY_BUILD: ${{ inputs.force_weekly_build == true }}
 
 permissions:
   contents: read
@@ -75,7 +78,8 @@ jobs:
           echo "GITHUB_ORGANISATION_KIE_TOOLS: ${{ inputs.GITHUB_ORGANISATION_KIE_TOOLS }}"
           echo "BRANCH_TO_BUILD: ${{ inputs.BRANCH_TO_BUILD }}"
           echo "MAVEN_REPOSITORY_URL: ${{ inputs.MAVEN_REPOSITORY_URL }}"
-          echo "force_cleanup_of_built_snapshot_version: ${{ inputs.force_cleanup_of_built_snapshot_version }}"
+          echo "force_cleanup_of_snapshot: ${{ inputs.force_cleanup_of_snapshot }}"
+          echo "force_weekly_build: ${{ inputs.force_weekly_build }}"
           echo ""
           echo "=== Resolved Environment Variables ==="
           echo "LOGIC_VERSION (env): ${{ env.LOGIC_VERSION }}"
@@ -85,6 +89,7 @@ jobs:
           echo "MAVEN_REPOSITORY_URL (env): ${{ env.MAVEN_REPOSITORY_URL }}"
           echo "GITHUB_USERNAME (env): ${{ env.GITHUB_USERNAME }}"
           echo "FORCE_CLEANUP (env): ${{ env.FORCE_CLEANUP }}"
+          echo "FORCE_WEEKLY_BUILD (env): ${{ env.FORCE_WEEKLY_BUILD }}"
           echo "=================================="
 
       - name: Checkout Drools
@@ -114,6 +119,27 @@ jobs:
           repository: ${{ env.GITHUB_ORGANISATION_KIE_TOOLS }}/kie-tools
           path: kie-tools
           ref: ${{ env.BRANCH_TO_BUILD }}
+
+      - name: Calculate if it is weekly publishing day
+        id: isweeklypublish
+        run: |
+          WEEK_NUM=$(date +%V)
+          DAY_OF_WEEK=$(date +%u)  # 1=Monday, 7=Sunday
+          IS_MONDAY=$((DAY_OF_WEEK == 1))
+          echo "is_weekly_publish_day=$IS_MONDAY" >> $GITHUB_OUTPUT
+
+      - name: Calculate weekly build version
+        if: ${{ steps.isweeklypublish.outputs.is_weekly_publish_day == '1' || env.FORCE_WEEKLY_BUILD == 'true' }}
+        run: |
+          BASE_VERSION="${{ env.LOGIC_VERSION }}"
+          # Extract version number by removing -SNAPSHOT suffix
+          VERSION_NUMBER="${BASE_VERSION%-SNAPSHOT}"
+          # Get current date in YYYYMMDD format
+          CURRENT_DATE=$(date +%Y%m%d)
+          # Create weekly version format: {version-number}-{date}-weekly
+          WEEKLY_VERSION="${VERSION_NUMBER}-${CURRENT_DATE}-weekly"
+          echo "Using weekly build version: $WEEKLY_VERSION"
+          echo "LOGIC_VERSION=$WEEKLY_VERSION" >> $GITHUB_ENV
 
       - name: Update Drools version and prepare repository
         run: |
@@ -152,62 +178,47 @@ jobs:
           python3 ../../../scripts/version-update/update-maven-versions.py ${{ env.LOGIC_VERSION }}
         working-directory: kie-tools/packages/serverless-logic-web-tools-swf-deployment-quarkus-app
 
-      - name: Calculate if it is cleanup day for snapshots
-        id: cleanupcalculation
-        run: |
-          WEEK_NUM=$(date +%V)
-          DAY_OF_WEEK=$(date +%u)  # 1=Monday, 7=Sunday
-          IS_EVEN=$((WEEK_NUM % 2 == 0))
-          IS_MONDAY=$((DAY_OF_WEEK == 1))
-          IS_FIRST_DAY_OF_EVEN_WEEK=$((IS_EVEN && IS_MONDAY))
-          echo "is_cleanup_day=$IS_FIRST_DAY_OF_EVEN_WEEK" >> $GITHUB_OUTPUT
 
-      - name: Extract organization from Maven URL
-        if: ${{ (env.FORCE_CLEANUP == 'true' || steps.cleanupcalculation.outputs.is_cleanup_day == '1') && endsWith(env.LOGIC_VERSION, '-SNAPSHOT') }}
-        id: extract-org
-        run: |
-          ORG=$(echo "${{ env.MAVEN_REPOSITORY_URL }}" | sed 's|https://maven.pkg.github.com/||' | cut -d'/' -f1)
-          echo "organization=$ORG" >> $GITHUB_OUTPUT
-
-      - name: Cleanup before publish (on even weeks)
-        if: ${{ (env.FORCE_CLEANUP == 'true' || steps.cleanupcalculation.outputs.is_cleanup_day == '1') && endsWith(env.LOGIC_VERSION, '-SNAPSHOT') }}
-        run: |
-          scripts/delete-package-version.sh --owner "${{ steps.extract-org.outputs.organization }}" "${{ env.LOGIC_VERSION }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+      # TODO - remove the debugging mvn command - it builds only the bom and related modules now for debugging purposes. 
       - name: Build and publish Drools artifacts
-        run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DaltDeploymentRepository=github::${{ env.MAVEN_REPOSITORY_URL }}
+        run: mvn --batch-mode clean deploy -pl :bom -am -s ../.github/configs/settings.xml -DaltDeploymentRepository=github::${{ env.MAVEN_REPOSITORY_URL }}
         working-directory: drools
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and publish kogito-runtimes artifacts
-        run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DskipTests -Dfull -Dversion.org.kie=${{ env.LOGIC_VERSION }} -DaltDeploymentRepository=github::${{ env.MAVEN_REPOSITORY_URL }}
-        working-directory: kogito-runtimes
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # - name: Build and publish kogito-runtimes artifacts
+      #   run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DskipTests -Dfull -Dversion.org.kie=${{ env.LOGIC_VERSION }} -DaltDeploymentRepository=github::${{ env.MAVEN_REPOSITORY_URL }}
+      #   working-directory: kogito-runtimes
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and publish kogito-apps artifacts
-        run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DskipTests -Dversion.org.kie=${{ env.LOGIC_VERSION }} -DaltDeploymentRepository=github::${{ env.MAVEN_REPOSITORY_URL }}
-        working-directory: kogito-apps
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # - name: Build and publish kogito-apps artifacts
+      #   run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DskipTests -Dversion.org.kie=${{ env.LOGIC_VERSION }} -DaltDeploymentRepository=github::${{ env.MAVEN_REPOSITORY_URL }}
+      #   working-directory: kogito-apps
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and publish kie-tools artifacts
-        run: mvn --batch-mode clean deploy -s ${{ github.workspace }}/.github/configs/settings.xml -DskipTests -Drevision=${{ env.LOGIC_VERSION }} -Dversion.org.kie.kogito=${{ env.LOGIC_VERSION }} -Dskip.maven.deploy.in.pnpm.wrapped.artifacts=false -DaltDeploymentRepository=github::${{ env.MAVEN_REPOSITORY_URL }}
-        working-directory: kie-tools
+      # - name: Build and publish kie-tools artifacts
+      #   run: mvn --batch-mode clean deploy -s ${{ github.workspace }}/.github/configs/settings.xml -DskipTests -Drevision=${{ env.LOGIC_VERSION }} -Dversion.org.kie.kogito=${{ env.LOGIC_VERSION }} -Dskip.maven.deploy.in.pnpm.wrapped.artifacts=false -DaltDeploymentRepository=github::${{ env.MAVEN_REPOSITORY_URL }}
+      #   working-directory: kie-tools
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     MAVEN_ARGS: --settings=${{ github.workspace }}/.github/configs/settings.xml -Drevision=${{ env.LOGIC_VERSION }}
+      #     KIE_TOOLS_BUILD__mavenDeploySkip: false
+      #     DROOLS_AND_KOGITO__skip: true
+      #     KIE_TOOLS_BUILD__runTests: false
+      #     KIE_TOOLS_BUILD__runEndToEndTests: false
+      #     KIE_TOOLS_BUILD__buildContainerImages: false
+      #     KIE_TOOLS_BUILD__containerizedEndToEndTests: false
+      #     KIE_TOOLS_BUILD__ignoreTestFailures: true
+      #     KIE_TOOLS_BUILD__ignoreEndToEndTestFailures: true
+      #     DROOLS_AND_KOGITO__droolsRepoUrl: https://github.com/kiegroup/drools
+      #     DROOLS_AND_KOGITO__kogitoRuntimesRepoUrl: https://github.com/kiegroup/kogito-runtimes
+      #     DROOLS_AND_KOGITO__kogitoAppsRepoUrl: https://github.com/kiegroup/kogito-apps
+
+      - name: Cleanup snapshots after publish
+        if: ${{ (steps.isweeklypublish.outputs.is_weekly_publish_day == '1' || env.FORCE_CLEANUP == 'true') }}
+        run: |
+          scripts/delete-package-version.sh --owner "${{ env.MAVEN_REPOSITORY_ORGANISATION }}" "${{ env.SNAPSHOT_VERSION }}"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MAVEN_ARGS: --settings=${{ github.workspace }}/.github/configs/settings.xml -Drevision=${{ env.LOGIC_VERSION }}
-          KIE_TOOLS_BUILD__mavenDeploySkip: false
-          DROOLS_AND_KOGITO__skip: true
-          KIE_TOOLS_BUILD__runTests: false
-          KIE_TOOLS_BUILD__runEndToEndTests: false
-          KIE_TOOLS_BUILD__buildContainerImages: false
-          KIE_TOOLS_BUILD__containerizedEndToEndTests: false
-          KIE_TOOLS_BUILD__ignoreTestFailures: true
-          KIE_TOOLS_BUILD__ignoreEndToEndTestFailures: true
-          DROOLS_AND_KOGITO__droolsRepoUrl: https://github.com/kiegroup/drools
-          DROOLS_AND_KOGITO__kogitoRuntimesRepoUrl: https://github.com/kiegroup/kogito-runtimes
-          DROOLS_AND_KOGITO__kogitoAppsRepoUrl: https://github.com/kiegroup/kogito-apps
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
