@@ -111,7 +111,7 @@ jobs:
       - name: Cleanup snapshots after publish
         id: cleanup-snapshots
         run: |
-          scripts/delete-package-version.sh --owner "${{ env.MAVEN_REPOSITORY_ORGANISATION }}" "${{ inputs.LOGIC_VERSION }}"
+          scripts/delete-package-version.sh --owner "baldimir" "${{ inputs.LOGIC_VERSION }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
