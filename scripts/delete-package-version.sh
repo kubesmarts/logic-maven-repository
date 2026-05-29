@@ -28,6 +28,7 @@ readonly NC='\033[0m'
 OWNER="${DEFAULT_OWNER}"
 VERSION=""
 DRY_RUN=false
+ACCOUNT_TYPE=""  # Will be set to "orgs" or "users" after detection
 
 # Counters
 packages_found=0
@@ -119,16 +120,23 @@ check_prerequisites() {
 }
 
 fetch_packages() {
-    log "INFO" "Fetching packages for organization: ${OWNER}..."
+    log "INFO" "Fetching packages for owner: ${OWNER}..."
     
     local page=1
     local per_page=100
     local all_packages=()
+    local tried_user_endpoint=false
     
     while true; do
-        local api_url="/orgs/${OWNER}/packages?package_type=${PACKAGE_TYPE}&per_page=${per_page}&page=${page}"
-        
-        log "INFO" "Fetching page ${page} from API endpoint: ${api_url}"
+        # Determine API endpoint based on account type
+        local api_url
+        if [ "${ACCOUNT_TYPE}" = "users" ]; then
+            api_url="/users/${OWNER}/packages?package_type=${PACKAGE_TYPE}&per_page=${per_page}&page=${page}"
+            log "INFO" "Using user endpoint (page ${page}): ${api_url}"
+        else
+            api_url="/orgs/${OWNER}/packages?package_type=${PACKAGE_TYPE}&per_page=${per_page}&page=${page}"
+            log "INFO" "Using orgs endpoint (page ${page}): ${api_url}"
+        fi
         
         # Capture both stdout and stderr
         local response=$(gh api \
@@ -147,36 +155,57 @@ fetch_packages() {
                 log "ERROR" "Authentication issue detected. Please verify:"
                 log "ERROR" "  1. GH_TOKEN environment variable is set"
                 log "ERROR" "  2. Token has 'read:packages' and 'delete:packages' scopes"
-                log "ERROR" "  3. Token has access to organization '${OWNER}'"
+                log "ERROR" "  3. Token has access to '${OWNER}'"
                 log "ERROR" "  4. Run 'gh auth status' to check authentication"
             fi
             exit 1
         fi
         
-        # Validate JSON response
+        # Validate JSON response and check for API errors
         if ! echo "${response}" | jq empty 2>/dev/null; then
             log "ERROR" "API returned non-JSON response"
             log "ERROR" "Raw API Response (first 500 chars): $(sanitize_output "${response:0:500}")"
-            
-            # Check if response looks like an error message
-            if echo "${response}" | grep -qi "error\|not found\|unauthorized\|forbidden"; then
-                log "ERROR" "API error detected in response"
-                
-                # Check for authentication issues
-                if echo "${response}" | grep -qi "authentication\|unauthorized\|forbidden\|token"; then
-                    log "ERROR" "Authentication issue detected. Please verify:"
-                    log "ERROR" "  1. GH_TOKEN environment variable is set"
-                    log "ERROR" "  2. Token has 'read:packages' and 'delete:packages' scopes"
-                    log "ERROR" "  3. Token has access to organization '${OWNER}'"
-                fi
-                
-                # Check for organization access issues
-                if echo "${response}" | grep -qi "not found"; then
-                    log "ERROR" "Organization '${OWNER}' not found or not accessible"
-                    log "ERROR" "Verify the organization name and token permissions"
-                fi
-            fi
             exit 1
+        fi
+        
+        # Check if response is a JSON error object (has "message" field)
+        local has_message=$(echo "${response}" | jq -r 'has("message")' 2>/dev/null)
+        if [ "${has_message}" = "true" ]; then
+            local error_message=$(echo "${response}" | jq -r '.message' 2>/dev/null)
+            local status_code=$(echo "${response}" | jq -r '.status // "unknown"' 2>/dev/null)
+            
+            # If we get 404 on organization endpoint and haven't tried user endpoint yet
+            if [ "${status_code}" = "404" ] && [ -z "${ACCOUNT_TYPE}" ] && [ "${tried_user_endpoint}" = "false" ]; then
+                log "INFO" "Organization endpoint returned 404, trying user endpoint..."
+                ACCOUNT_TYPE="users"
+                tried_user_endpoint=true
+                continue  # Retry with user endpoint
+            fi
+            
+            # Otherwise, it's a real error
+            log "ERROR" "API error: ${error_message} (status: ${status_code})"
+            
+            # Check for authentication issues
+            if echo "${error_message}" | grep -qi "authentication\|unauthorized\|forbidden"; then
+                log "ERROR" "Authentication issue detected. Please verify:"
+                log "ERROR" "  1. GH_TOKEN environment variable is set"
+                log "ERROR" "  2. Token has 'read:packages' and 'delete:packages' scopes"
+                log "ERROR" "  3. Token has access to '${OWNER}'"
+            fi
+            
+            # Check for not found issues
+            if [ "${status_code}" = "404" ]; then
+                log "ERROR" "Owner '${OWNER}' not found or not accessible"
+                log "ERROR" "Verify the owner name and token permissions"
+            fi
+            
+            exit 1
+        fi
+        
+        # Set account type on first successful request
+        if [ -z "${ACCOUNT_TYPE}" ]; then
+            ACCOUNT_TYPE="orgs"
+            log "SUCCESS" "Detected account type: organization"
         fi
         
         # Check if response is an array (expected format)
@@ -230,10 +259,13 @@ delete_package_version() {
     
     local encoded_package_name=$(url_encode "${package_name}")
     
+    # Use the detected account type for API endpoint
+    local api_endpoint="/${ACCOUNT_TYPE}/${OWNER}/packages/maven/${encoded_package_name}/versions"
+    
     local version_id=$(gh api \
         -H "Accept: application/vnd.github+json" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
-        "/orgs/${OWNER}/packages/maven/${encoded_package_name}/versions" 2>/dev/null | \
+        "${api_endpoint}" 2>/dev/null | \
         jq -r ".[] | select(.name == \"${VERSION}\") | .id" 2>/dev/null || echo "")
     
     if [ -n "${version_id}" ]; then
@@ -248,7 +280,7 @@ delete_package_version() {
                 -X DELETE \
                 -H "Accept: application/vnd.github+json" \
                 -H "X-GitHub-Api-Version: 2022-11-28" \
-                "/orgs/${OWNER}/packages/maven/${encoded_package_name}/versions/${version_id}" 2>&1)
+                "/${ACCOUNT_TYPE}/${OWNER}/packages/maven/${encoded_package_name}/versions/${version_id}" 2>&1)
             
             if [ $? -eq 0 ]; then
                 log "SUCCESS" "Deleted ${package_name}:${VERSION}"
@@ -271,7 +303,8 @@ print_summary() {
     echo "================================================================================"
     echo "Configuration:"
     echo "  Version:        ${VERSION}"
-    echo "  Organization:   ${OWNER}"
+    echo "  Owner:          ${OWNER}"
+    echo "  Account Type:   ${ACCOUNT_TYPE}"
     echo "  Dry-run:        ${DRY_RUN}"
     echo ""
     echo "Results:"
@@ -337,7 +370,7 @@ main() {
     echo "================================================================================"
     echo -e "${BLUE}GitHub Packages Version Deletion${NC}"
     echo "================================================================================"
-    echo "Organization:   ${OWNER}"
+    echo "Owner:          ${OWNER}"
     echo "Version:        ${VERSION}"
     [ "$DRY_RUN" = true ] && \
         echo -e "Mode:           ${YELLOW}DRY-RUN${NC}" || \
