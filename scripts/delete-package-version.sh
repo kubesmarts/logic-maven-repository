@@ -28,7 +28,7 @@ readonly NC='\033[0m'
 OWNER="${DEFAULT_OWNER}"
 VERSION=""
 DRY_RUN=false
-ACCOUNT_TYPE=""  # Will be set to "orgs" or "users" after detection
+ACCOUNT_TYPE="orgs"  # Default to organization, will be changed to "users" if needed
 
 # Counters
 packages_found=0
@@ -86,6 +86,7 @@ log() {
         SUCCESS) color="${GREEN}" ;;
         WARNING) color="${YELLOW}" ;;
         INFO)    color="${CYAN}" ;;
+        DEBUG)   color="${BLUE}" ;;
     esac
     
     # Sanitize message before logging
@@ -126,11 +127,12 @@ fetch_packages() {
     local per_page=100
     local all_packages=()
     local tried_user_endpoint=false
+    local detected_account_type="${ACCOUNT_TYPE}"
     
     while true; do
         # Determine API endpoint based on account type
         local api_url
-        if [ "${ACCOUNT_TYPE}" = "users" ]; then
+        if [ "${detected_account_type}" = "users" ]; then
             api_url="/users/${OWNER}/packages?package_type=${PACKAGE_TYPE}&per_page=${per_page}&page=${page}"
             log "INFO" "Using user endpoint (page ${page}): ${api_url}"
         else
@@ -163,9 +165,9 @@ fetch_packages() {
         
         # Check for 404 error BEFORE JSON validation to allow fallback
         # This handles valid JSON error responses like {"message":"Not Found","status":"404"}
-        if echo "${response}" | grep -q '"status":"404"' && [ -z "${ACCOUNT_TYPE}" ] && [ "${tried_user_endpoint}" = "false" ]; then
+        if echo "${response}" | grep -q '"status":"404"' && [ "${tried_user_endpoint}" = "false" ]; then
             log "INFO" "Organization endpoint returned 404, trying user endpoint..."
-            ACCOUNT_TYPE="users"
+            detected_account_type="users"
             tried_user_endpoint=true
             continue  # Retry with user endpoint
         fi
@@ -201,12 +203,6 @@ fetch_packages() {
             fi
             
             exit 1
-        fi
-        
-        # Set account type on first successful request
-        if [ -z "${ACCOUNT_TYPE}" ]; then
-            ACCOUNT_TYPE="orgs"
-            log "SUCCESS" "Detected account type: organization"
         fi
         
         # Check if response is an array (expected format)
@@ -247,6 +243,9 @@ fetch_packages() {
     
     packages_found=${#all_packages[@]}
     log "SUCCESS" "Found ${packages_found} packages"
+    
+    # Output ACCOUNT_TYPE first, then packages
+    echo "${detected_account_type}"
     printf '%s\n' "${all_packages[@]}"
 }
 
@@ -263,10 +262,20 @@ delete_package_version() {
     # Use the detected account type for API endpoint
     local api_endpoint="/${ACCOUNT_TYPE}/${OWNER}/packages/maven/${encoded_package_name}/versions"
     
-    local version_id=$(gh api \
+    # Fetch versions with error handling
+    local versions_response=$(gh api \
         -H "Accept: application/vnd.github+json" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
-        "${api_endpoint}" 2>/dev/null | \
+        "${api_endpoint}" 2>&1)
+    local api_exit_code=$?
+    
+    if [ ${api_exit_code} -ne 0 ]; then
+        log "INFO" "No ${VERSION} in ${package_name} (API call failed)"
+        return
+    fi
+    
+    # Try to find the version ID
+    local version_id=$(echo "${versions_response}" | \
         jq -r ".[] | select(.name == \"${VERSION}\") | .id" 2>/dev/null || echo "")
     
     if [ -n "${version_id}" ]; then
@@ -384,8 +393,10 @@ main() {
     # Check prerequisites
     check_prerequisites
     
-    # Fetch packages
-    local packages=$(fetch_packages)
+    # Fetch packages and account type
+    local output=$(fetch_packages)
+    ACCOUNT_TYPE=$(echo "$output" | head -n 1)
+    local packages=$(echo "$output" | tail -n +2)
     
     # Count packages from the returned list
     if [ -n "${packages}" ]; then
