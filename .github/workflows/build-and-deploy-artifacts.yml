@@ -217,8 +217,17 @@ jobs:
       #     DROOLS_AND_KOGITO__kogitoAppsRepoUrl: https://github.com/kiegroup/kogito-apps
 
       - name: Cleanup snapshots after publish
+        id: cleanup-snapshots
         if: ${{ steps.isweeklypublish.outputs.is_weekly_publish_day == '1' || env.FORCE_CLEANUP == 'true' }}
         run: |
           scripts/delete-package-version.sh --owner "${{ env.MAVEN_REPOSITORY_ORGANISATION }}" "${{ env.SNAPSHOT_VERSION }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # After debugging is done, add condition steps.isweeklypublish.outputs.is_weekly_publish_day == '1' to only build snapshots again when the weekly is published. 
+      - name: Trigger new snapshot build
+        if: steps.cleanup-snapshots.outcome == 'success'
+        run: |
+          gh workflow run build-and-deploy-artifacts.yml --ref ${{ github.ref_name }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
