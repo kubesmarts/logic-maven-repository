@@ -60,6 +60,23 @@ log_error() {
 }
 
 ################################################################################
+# Function: sanitize_output
+# Sanitize output to remove sensitive information
+################################################################################
+sanitize_output() {
+    local text="$1"
+    # Remove GitHub tokens (ghp_, gho_, github_pat_)
+    text=$(echo "$text" | sed -E 's/ghp_[a-zA-Z0-9]{36}/[REDACTED_TOKEN]/g')
+    text=$(echo "$text" | sed -E 's/gho_[a-zA-Z0-9]{36}/[REDACTED_TOKEN]/g')
+    text=$(echo "$text" | sed -E 's/github_pat_[a-zA-Z0-9_]{82}/[REDACTED_TOKEN]/g')
+    # Remove Authorization headers
+    text=$(echo "$text" | sed -E 's/(Authorization: [Bb]earer )[^ ]+/\1[REDACTED]/g')
+    # Remove generic token patterns
+    text=$(echo "$text" | sed -E 's/([Tt]oken[: =]+)[^ ]+/\1[REDACTED]/g')
+    echo "$text"
+}
+
+################################################################################
 # Function: log_success
 # Logs a success message in green color
 ################################################################################
@@ -121,6 +138,9 @@ fetch_packages() {
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "/users/${USERNAME}/packages?package_type=${PACKAGE_TYPE}&per_page=${per_page}&page=${page}" 2>&1)
         
+        # Sanitize response immediately after capture
+        response=$(sanitize_output "${response}")
+        
         if [ $? -ne 0 ]; then
             log_error "Failed to fetch packages: ${response}"
             exit 1
@@ -174,6 +194,9 @@ delete_package() {
         -H "Accept: application/vnd.github+json" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
         "/users/${USERNAME}/packages/${PACKAGE_TYPE}/${package_name}" 2>&1)
+    
+    # Sanitize response immediately after capture
+    response=$(sanitize_output "${response}")
     
     if [ $? -eq 0 ]; then
         log_success "Deleted package: ${package_name}"

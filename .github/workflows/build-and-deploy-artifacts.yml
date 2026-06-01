@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       LOGIC_VERSION:
-        description: "LOGIC version to be built and published."
+        description: "Base snapshot version for the build. On Sundays it is used as a base for a weekly build, other days, it is directly used as a build version. "
         type: string
         required: false
         default: 111-SNAPSHOT
@@ -24,11 +24,16 @@ on:
         type: string
         required: false
         default: main
-      MAVEN_REPOSITORY_URL:
-        description: "URL of the Maven repository where artifacts will be deployed."
-        type: string
+      force_cleanup_of_snapshot:
+        description: "Force cleanup of built LOGIC_VERSION version regardless of schedule, if it is a SNAPSHOT version (overrides the Sunday cleanup during weekly builds)."
+        type: boolean
         required: false
-        default: https://maven.pkg.github.com/kubesmarts/logic-maven-repository
+        default: false
+      force_weekly_build:
+        description: "Force weekly build regardless of schedule (overrides the Monday schedule for weekly builds). Doesn't influence the cleanup behaviour. So to also do the cleanup when overriding, please force also cleanup."
+        type: boolean
+        required: false
+        default: false
 # TODO - Implement optional tests execution
 #      RUN_TESTS:
 #        description: "If true, also tests will be run. "
@@ -36,122 +41,85 @@ on:
 #        required: false
 #        default: false
 
-env:
-  LOGIC_VERSION: ${{ inputs.LOGIC_VERSION || '111-SNAPSHOT' }}
-  GITHUB_ORGANISATION: ${{ inputs.GITHUB_ORGANISATION || 'kiegroup' }}
-  GITHUB_ORGANISATION_KIE_TOOLS: ${{ inputs.GITHUB_ORGANISATION_KIE_TOOLS || 'kubesmarts' }}
-  BRANCH_TO_BUILD: ${{ inputs.BRANCH_TO_BUILD || 'main' }}
-  MAVEN_REPOSITORY_URL: ${{ inputs.MAVEN_REPOSITORY_URL || 'https://maven.pkg.github.com/kubesmarts/logic-maven-repository' }}
-  GITHUB_USERNAME: ${{ inputs.GITHUB_ORGANISATION || 'kiegroup' }}
-
 permissions:
   contents: read
   packages: write
 
 jobs:
-  publish:
+  prepare:
     runs-on: ubuntu-latest
+    outputs:
+      logic_version: ${{ steps.set-version.outputs.logic_version }}
+      is_weekly_publish_day: ${{ steps.isweeklypublish.outputs.is_weekly_publish_day }}
+    steps:
+      - name: Print Workflow Inputs
+        run: |
+          echo "=== Workflow Input Parameters ==="
+          echo "LOGIC_VERSION: ${{ inputs.LOGIC_VERSION }}"
+          echo "GITHUB_ORGANISATION: ${{ inputs.GITHUB_ORGANISATION }}"
+          echo "GITHUB_ORGANISATION_KIE_TOOLS: ${{ inputs.GITHUB_ORGANISATION_KIE_TOOLS }}"
+          echo "BRANCH_TO_BUILD: ${{ inputs.BRANCH_TO_BUILD }}"
+          echo "force_cleanup_of_snapshot: ${{ inputs.force_cleanup_of_snapshot }}"
+          echo "force_weekly_build: ${{ inputs.force_weekly_build }}"
+          echo "=================================="
+
+      - name: Calculate if it is weekly publishing day
+        id: isweeklypublish
+        run: |
+          WEEK_NUM=$(date +%V)
+          DAY_OF_WEEK=$(date +%u)  # 1=Monday, 7=Sunday
+          IS_DAY_OF_WEEKLY=$((DAY_OF_WEEK == 7))
+          echo "is_weekly_publish_day=$IS_DAY_OF_WEEKLY" >> $GITHUB_OUTPUT
+
+      - name: Calculate weekly build version
+        id: set-version
+        run: |
+          BASE_VERSION="${{ inputs.LOGIC_VERSION }}"
+          
+          if [[ "${{ steps.isweeklypublish.outputs.is_weekly_publish_day }}" == "1" || "${{ inputs.force_weekly_build == true }}" == "true" ]]; then
+            # Extract version number by removing -SNAPSHOT suffix
+            VERSION_NUMBER="${BASE_VERSION%-SNAPSHOT}"
+            # Get current date in YYYYMMDD format
+            CURRENT_DATE=$(date +%Y%m%d)
+            # Create weekly version format: {version-number}-{date}-weekly
+            WEEKLY_VERSION="${VERSION_NUMBER}-${CURRENT_DATE}-weekly"
+            echo "Using weekly build version: $WEEKLY_VERSION"
+            echo "logic_version=$WEEKLY_VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "Using base version: $BASE_VERSION"
+            echo "logic_version=$BASE_VERSION" >> $GITHUB_OUTPUT
+          fi
+
+  build-and-deploy:
+    needs: prepare
+    uses: ./.github/workflows/publish-logic-artifacts.yml
+    with:
+      LOGIC_VERSION: ${{ needs.prepare.outputs.logic_version }}
+      GITHUB_ORGANISATION: ${{ inputs.GITHUB_ORGANISATION }}
+      GITHUB_ORGANISATION_KIE_TOOLS: ${{ inputs.GITHUB_ORGANISATION_KIE_TOOLS }}
+      BRANCH_TO_BUILD: ${{ inputs.BRANCH_TO_BUILD }}
+    secrets: inherit
+
+  cleanup:
+    needs: [prepare, build-and-deploy]
+    runs-on: ubuntu-latest
+    if: ${{ needs.prepare.outputs.is_weekly_publish_day == '1' || inputs.force_cleanup_of_snapshot == true }}
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-      - uses: actions/setup-python@v6
-        with:
-          python-version: 3.x
-
-      - name: Checkout Drools
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ env.GITHUB_ORGANISATION }}/drools
-          path: drools
-          ref: ${{ env.BRANCH_TO_BUILD }}
-
-      - name: Checkout kogito-runtimes
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ env.GITHUB_ORGANISATION }}/kogito-runtimes
-          path: kogito-runtimes
-          ref: ${{ env.BRANCH_TO_BUILD }}
-
-      - name: Checkout kogito-apps
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ env.GITHUB_ORGANISATION }}/kogito-apps
-          path: kogito-apps
-          ref: ${{ env.BRANCH_TO_BUILD }}
-
-      - name: Checkout kubesmarts/kie-tools
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ env.GITHUB_ORGANISATION_KIE_TOOLS }}/kie-tools
-          path: kie-tools
-          ref: ${{ env.BRANCH_TO_BUILD }}
-
-      - name: Update Drools version and prepare repository
+      - name: Cleanup snapshots after publish
+        id: cleanup-snapshots
         run: |
-          python3 ../scripts/version-update/update-maven-versions.py ${{ env.LOGIC_VERSION }} --exclude "*/kie-ci-test-jars/*"
-        working-directory: drools
-
-      - name: Update kogito-runtimes version
-        run: |
-          python3 ../scripts/version-update/update-maven-versions.py ${{ env.LOGIC_VERSION }}
-        working-directory: kogito-runtimes
-
-      - name: Update kogito-apps version
-        run: |
-          python3 ../scripts/version-update/update-maven-versions.py ${{ env.LOGIC_VERSION }} --update-root-parent
-        working-directory: kogito-apps
-
-      - name: Update kie-tools version and prepare repository
-        run: |
-          python3 ../scripts/version-update/update-maven-versions.py ${{ env.LOGIC_VERSION }} --exclude "*/maven-base/*" "*/serverless-logic-web-tools-swf-deployment-quarkus-app/*"
-        working-directory: kie-tools
-
-      - name: Update kie-tools maven-base
-        run: |
-          python3 ../../../scripts/version-update/update-maven-versions.py ${{ env.LOGIC_VERSION }}
-          sed -i 's|<version\.org\.kie\.kogito>.*</version\.org\.kie\.kogito>|<version.org.kie.kogito>${project.version}</version.org.kie.kogito>|g' ./pom.xml
-        working-directory: kie-tools/packages/maven-base
-
-      - name: Update kie-tools serverless-logic-web-tools-swf-deployment-quarkus-app
-        run: |
-          python3 ../../../scripts/version-update/update-maven-versions.py ${{ env.LOGIC_VERSION }}
-        working-directory: kie-tools/packages/serverless-logic-web-tools-swf-deployment-quarkus-app
-
-      - name: Build and publish Drools artifacts
-        run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml
-        working-directory: drools
+          scripts/delete-package-version.sh "${{ inputs.LOGIC_VERSION }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and publish kogito-runtimes artifacts
-        run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DskipTests -Dversion.org.kie=${{ env.LOGIC_VERSION }}
-        working-directory: kogito-runtimes
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and publish kogito-apps artifacts
-        run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DskipTests -Dversion.org.kie=${{ env.LOGIC_VERSION }}
-        working-directory: kogito-apps
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and publish kie-tools artifacts
-        run: mvn --batch-mode clean deploy -s ${{ github.workspace }}/.github/configs/settings.xml -DskipTests -Drevision=${{ env.LOGIC_VERSION }} -Dversion.org.kie.kogito=${{ env.LOGIC_VERSION }} -Dskip.maven.deploy.in.pnpm.wrapped.artifacts=false
-        working-directory: kie-tools
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MAVEN_ARGS: --settings=${{ github.workspace }}/.github/configs/settings.xml -Drevision=${{ env.LOGIC_VERSION }}
-          KIE_TOOLS_BUILD__mavenDeploySkip: false
-          DROOLS_AND_KOGITO__skip: true
-          KIE_TOOLS_BUILD__runTests: false
-          KIE_TOOLS_BUILD__runEndToEndTests: false
-          KIE_TOOLS_BUILD__buildContainerImages: false
-          KIE_TOOLS_BUILD__containerizedEndToEndTests: false
-          KIE_TOOLS_BUILD__ignoreTestFailures: true
-          KIE_TOOLS_BUILD__ignoreEndToEndTestFailures: true
-          DROOLS_AND_KOGITO__droolsRepoUrl: https://github.com/kiegroup/drools
-          DROOLS_AND_KOGITO__kogitoRuntimesRepoUrl: https://github.com/kiegroup/kogito-runtimes
-          DROOLS_AND_KOGITO__kogitoAppsRepoUrl: https://github.com/kiegroup/kogito-apps
+    
+  build-new-snapshots-if-needed:
+    needs: [prepare, build-and-deploy, cleanup]
+    if: ${{ always() && needs.cleanup.result == 'success' }}
+    uses: ./.github/workflows/publish-logic-artifacts.yml
+    with:
+      LOGIC_VERSION: ${{ inputs.LOGIC_VERSION }}
+      GITHUB_ORGANISATION: ${{ inputs.GITHUB_ORGANISATION }}
+      GITHUB_ORGANISATION_KIE_TOOLS: ${{ inputs.GITHUB_ORGANISATION_KIE_TOOLS }}
+      BRANCH_TO_BUILD: ${{ inputs.BRANCH_TO_BUILD }}
+    secrets: inherit
