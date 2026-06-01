@@ -441,4 +441,3 @@ main() {
 # Entry point
 main "$@"
 
-# Made with Bob
