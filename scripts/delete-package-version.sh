@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -e
 ################################################################################
 # GitHub Packages Version Deletion Script
 # Deletes a specific version from all Maven packages in an organization.
