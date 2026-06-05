@@ -1,0 +1,13 @@
+name: "Build and publish LOGIC jars to the GitHub Maven Repository - Daily"
+on:
+  schedule:
+    - cron: '59 23 * * *'  # Runs daily at 23:59 UTC
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  call-images-publishing-workflow:
+    uses: ./.github/workflows/build-and-deploy-artifacts.yml
+    secrets: inherit

@@ -1,0 +1,51 @@
+name: "Build and publish LOGIC jars to the GitHub Maven Repository - Manually"
+
+on:
+  workflow_dispatch:
+    inputs:
+      LOGIC_VERSION:
+        description: "Base snapshot version for the build. On Sundays it is used as a base for a weekly build, other days, it is directly used as a build version. "
+        type: string
+        required: false
+        default: 111-SNAPSHOT
+      GITHUB_ORGANISATION:
+        description: "GitHub organisation that contains the LOGIC repositories."
+        type: string
+        required: false
+        default: kiegroup
+      GITHUB_ORGANISATION_KIE_TOOLS:
+        description: "GitHub organisation that contains the LOGIC kie-tools repository."
+        type: string
+        required: false
+        default: kubesmarts
+      BRANCH_TO_BUILD:
+        description: "Branch from which the artifacts should be published."
+        type: string
+        required: false
+        default: main
+      force_cleanup_of_snapshot:
+        description: "Force cleanup of built LOGIC_VERSION version regardless of schedule, if it is a SNAPSHOT version (overrides the Sunday cleanup during weekly builds)."
+        type: boolean
+        required: false
+        default: false
+      force_weekly_build:
+        description: "Force weekly build regardless of schedule (overrides the Monday schedule for weekly builds). Doesn't influence the cleanup behaviour. So to also do the cleanup when overriding, please force also cleanup."
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  call-images-publishing-workflow:
+    uses: ./.github/workflows/build-and-deploy-artifacts.yml
+    with:
+      LOGIC_VERSION: ${{ github.event.inputs.LOGIC_VERSION }}
+      GITHUB_ORGANISATION: ${{ github.event.inputs.GITHUB_ORGANISATION }}
+      GITHUB_ORGANISATION_KIE_TOOLS: ${{ github.event.inputs.GITHUB_ORGANISATION_KIE_TOOLS }}
+      BRANCH_TO_BUILD: ${{ github.event.inputs.BRANCH_TO_BUILD }}
+      force_cleanup_of_snapshot: ${{ github.event.inputs.force_cleanup_of_snapshot }}
+      force_weekly_build: ${{ github.event.inputs.force_weekly_build }}
+    secrets: inherit
