@@ -42,10 +42,10 @@ jobs:
   call-images-publishing-workflow:
     uses: ./.github/workflows/build-and-deploy-artifacts.yml
     with:
-      LOGIC_VERSION: ${{ github.event.inputs.LOGIC_VERSION }}
-      GITHUB_ORGANISATION: ${{ github.event.inputs.GITHUB_ORGANISATION }}
-      GITHUB_ORGANISATION_KIE_TOOLS: ${{ github.event.inputs.GITHUB_ORGANISATION_KIE_TOOLS }}
-      BRANCH_TO_BUILD: ${{ github.event.inputs.BRANCH_TO_BUILD }}
-      force_cleanup_of_snapshot: ${{ github.event.inputs.force_cleanup_of_snapshot }}
-      force_weekly_build: ${{ github.event.inputs.force_weekly_build }}
+      LOGIC_VERSION: ${{ inputs.LOGIC_VERSION }}
+      GITHUB_ORGANISATION: ${{ inputs.GITHUB_ORGANISATION }}
+      GITHUB_ORGANISATION_KIE_TOOLS: ${{ inputs.GITHUB_ORGANISATION_KIE_TOOLS }}
+      BRANCH_TO_BUILD: ${{ inputs.BRANCH_TO_BUILD }}
+      force_cleanup_of_snapshot: ${{ inputs.force_cleanup_of_snapshot }}
+      force_weekly_build: ${{ inputs.force_weekly_build }}
     secrets: inherit
