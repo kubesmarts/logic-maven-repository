@@ -33,6 +33,10 @@ permissions:
   contents: read
   packages: write
 
+env:
+  MAVEN_REPOSITORY_URL: "https://maven.pkg.github.com/kubesmarts/logic-maven-repository"
+  GITHUB_USERNAME: "kubesmarts"
+
 jobs:
   publish:
     runs-on: ubuntu-latest
