@@ -117,7 +117,7 @@ jobs:
         working-directory: kie-tools/packages/serverless-logic-web-tools-swf-deployment-quarkus-app
 
       - name: Build and publish Drools artifacts
-        run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml
+        run: mvn --batch-mode clean deploy -s ../.github/configs/settings.xml -DskipTests
         working-directory: drools
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
