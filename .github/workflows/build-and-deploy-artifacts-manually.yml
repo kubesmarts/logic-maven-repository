@@ -39,7 +39,7 @@ permissions:
   packages: write
 
 jobs:
-  call-images-publishing-workflow:
+  call-artifacts-publishing-workflow:
     uses: ./.github/workflows/build-and-deploy-artifacts.yml
     with:
       LOGIC_VERSION: ${{ inputs.LOGIC_VERSION }}
