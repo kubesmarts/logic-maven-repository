@@ -14,7 +14,6 @@ set -e
 # Configuration
 readonly DEFAULT_OWNER="kubesmarts"
 readonly PACKAGE_TYPE="maven"
-readonly DELAY_SECONDS=1
 
 # Colors
 readonly RED='\033[0;31m'
@@ -302,8 +301,8 @@ delete_package_version() {
             else
                 log "ERROR" "Failed to delete ${package_name}:${VERSION} - $(sanitize_output "${response}")"
             fi
-            
-            [ ${current} -lt ${total} ] && sleep ${DELAY_SECONDS}
+
+            [ ${current} -lt ${total} ]
         fi
     else
         log "INFO" "No ${VERSION} in ${package_name}"
