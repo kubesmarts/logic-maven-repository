@@ -140,7 +140,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MAVEN_ARGS: --settings=${{ github.workspace }}/.github/configs/settings.xml -Drevision=${{ inputs.LOGIC_VERSION }}
-          KIE_TOOLS_BUILD__mavenDeploySkip: false
           DROOLS_AND_KOGITO__skip: true
           KIE_TOOLS_BUILD__runTests: false
           KIE_TOOLS_BUILD__runEndToEndTests: false
