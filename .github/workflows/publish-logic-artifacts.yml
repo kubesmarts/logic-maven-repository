@@ -135,7 +135,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish kie-tools artifacts
-        run: mvn --batch-mode clean deploy -P build-all-maven-artifacts -pl '!:serverless-logic-web-tools-swf-deployment-quarkus-app' -s ${{ github.workspace }}/.github/configs/settings.xml -DskipTests -Drevision=${{ inputs.LOGIC_VERSION }} -Dversion.org.kie.kogito=${{ inputs.LOGIC_VERSION }}
+        run: mvn --batch-mode clean deploy -P build-all-maven-artifacts -pl '!:serverless-logic-web-tools-swf-deployment-quarkus-app,!:dev-deployment-base-image' -s ${{ github.workspace }}/.github/configs/settings.xml -DskipTests -Drevision=${{ inputs.LOGIC_VERSION }} -Dversion.org.kie.kogito=${{ inputs.LOGIC_VERSION }}
         working-directory: kie-tools
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
