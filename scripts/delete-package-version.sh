@@ -335,7 +335,9 @@ print_summary() {
         log "INFO" "No versions found to delete"
     fi
     
-    [ ${errors_count} -gt 0 ] && log "WARNING" "${errors_count} error(s) occurred"
+    if [ ${errors_count} -gt 0 ]; then
+        log "WARNING" "${errors_count} error(s) occurred"
+    fi
 }
 
 ################################################################################
@@ -375,7 +377,9 @@ main() {
     fi
     
     # Allow environment variable override
-    [ -n "${GITHUB_OWNER}" ] && [ "${OWNER}" = "${DEFAULT_OWNER}" ] && OWNER="${GITHUB_OWNER}"
+    if [ -n "${GITHUB_OWNER}" ] && [ "${OWNER}" = "${DEFAULT_OWNER}" ]; then
+        OWNER="${GITHUB_OWNER}"
+    fi
     
     # Print header
     echo "================================================================================"
@@ -383,9 +387,11 @@ main() {
     echo "================================================================================"
     echo "Owner:          ${OWNER}"
     echo "Version:        ${VERSION}"
-    [ "$DRY_RUN" = true ] && \
-        echo -e "Mode:           ${YELLOW}DRY-RUN${NC}" || \
+    if [ "$DRY_RUN" = true ]; then
+        echo -e "Mode:           ${YELLOW}DRY-RUN${NC}"
+    else
         echo -e "Mode:           ${GREEN}LIVE${NC}"
+    fi
     echo "================================================================================"
     echo ""
     
