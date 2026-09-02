@@ -81,7 +81,7 @@ log() {
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     
     case "$level" in
-        ERROR)   color="${RED}"; ((errors_count++)) ;;
+        ERROR)   color="${RED}"; errors_count=$((errors_count + 1)) ;;
         SUCCESS) color="${GREEN}" ;;
         WARNING) color="${YELLOW}" ;;
         INFO)    color="${CYAN}" ;;
@@ -239,7 +239,7 @@ fetch_packages() {
             fi
         done <<< "${packages}"
         
-        ((page++))
+        page=$((page + 1))
     done
     
     packages_found=${#all_packages[@]}
@@ -281,12 +281,12 @@ delete_package_version() {
         jq -r ".[] | select(.name == \"${VERSION}\") | .id" 2>/dev/null || echo "")
     
     if [ -n "${version_id}" ]; then
-        ((packages_with_version++))
+        packages_with_version=$((packages_with_version + 1))
         log "INFO" "Found ${VERSION} (ID: ${version_id})"
         
         if [ "$DRY_RUN" = true ]; then
             log "INFO" "[DRY-RUN] Would delete: ${package_name}:${VERSION}"
-            ((versions_deleted++))
+            versions_deleted=$((versions_deleted + 1))
         else
             local response=$(gh api \
                 -X DELETE \
@@ -297,12 +297,10 @@ delete_package_version() {
             
             if [ $? -eq 0 ]; then
                 log "SUCCESS" "Deleted ${package_name}:${VERSION}"
-                ((versions_deleted++))
+                versions_deleted=$((versions_deleted + 1))
             else
                 log "ERROR" "Failed to delete ${package_name}:${VERSION} - $(sanitize_output "${response}")"
             fi
-
-            [ ${current} -lt ${total} ]
         fi
     else
         log "INFO" "No ${VERSION} in ${package_name}"
@@ -337,7 +335,9 @@ print_summary() {
         log "INFO" "No versions found to delete"
     fi
     
-    [ ${errors_count} -gt 0 ] && log "WARNING" "${errors_count} error(s) occurred"
+    if [ ${errors_count} -gt 0 ]; then
+        log "WARNING" "${errors_count} error(s) occurred"
+    fi
 }
 
 ################################################################################
@@ -377,7 +377,9 @@ main() {
     fi
     
     # Allow environment variable override
-    [ -n "${GITHUB_OWNER}" ] && [ "${OWNER}" = "${DEFAULT_OWNER}" ] && OWNER="${GITHUB_OWNER}"
+    if [ -n "${GITHUB_OWNER}" ] && [ "${OWNER}" = "${DEFAULT_OWNER}" ]; then
+        OWNER="${GITHUB_OWNER}"
+    fi
     
     # Print header
     echo "================================================================================"
@@ -385,9 +387,11 @@ main() {
     echo "================================================================================"
     echo "Owner:          ${OWNER}"
     echo "Version:        ${VERSION}"
-    [ "$DRY_RUN" = true ] && \
-        echo -e "Mode:           ${YELLOW}DRY-RUN${NC}" || \
+    if [ "$DRY_RUN" = true ]; then
+        echo -e "Mode:           ${YELLOW}DRY-RUN${NC}"
+    else
         echo -e "Mode:           ${GREEN}LIVE${NC}"
+    fi
     echo "================================================================================"
     echo ""
     
@@ -419,7 +423,7 @@ main() {
     local current=0
     while IFS= read -r package; do
         if [ -n "${package}" ]; then
-            ((current++))
+            current=$((current + 1))
             delete_package_version "${package}" ${current} ${packages_found}
         fi
     done <<< "${packages}"
