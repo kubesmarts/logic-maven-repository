@@ -106,10 +106,10 @@ check_prerequisites() {
         exit 1
     fi
     
-    if ! gh auth status &> /dev/null; then
-        log "ERROR" "GitHub CLI not authenticated. Run 'gh auth login'"
-        exit 1
-    fi
+#    if ! gh auth status &> /dev/null; then
+#        log "ERROR" "GitHub CLI not authenticated. Run 'gh auth login'"
+#        exit 1
+#    fi
     
     if ! command -v jq &> /dev/null; then
         log "ERROR" "jq not installed. Install with: brew install jq (macOS) or apt-get install jq (Linux)"
@@ -140,12 +140,13 @@ fetch_packages() {
         fi
         
         # Capture both stdout and stderr
-        local response=$(gh api \
+        local response
+        response=$(gh api \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "${api_url}" 2>&1)
-        response=$(sanitize_output "${response}")
         local gh_exit_code=$?
+        response=$(sanitize_output "${response}")
         
         # Check if gh command failed
         if [ ${gh_exit_code} -ne 0 ]; then
@@ -264,12 +265,13 @@ delete_package_version() {
     local api_endpoint="/${ACCOUNT_TYPE}/${OWNER}/packages/maven/${encoded_package_name}/versions"
     
     # Fetch versions with error handling
-    local versions_response=$(gh api \
+    local versions_response
+    versions_response=$(gh api \
         -H "Accept: application/vnd.github+json" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
         "${api_endpoint}" 2>&1)
-    versions_response=$(sanitize_output "${versions_response}")
     local api_exit_code=$?
+    versions_response=$(sanitize_output "${versions_response}")
     
     if [ ${api_exit_code} -ne 0 ]; then
         log "INFO" "No ${VERSION} in ${package_name} (API call failed)"
@@ -288,18 +290,20 @@ delete_package_version() {
             log "INFO" "[DRY-RUN] Would delete: ${package_name}:${VERSION}"
             versions_deleted=$((versions_deleted + 1))
         else
-            local response=$(gh api \
+            local response
+            response=$(gh api \
                 -X DELETE \
                 -H "Accept: application/vnd.github+json" \
                 -H "X-GitHub-Api-Version: 2022-11-28" \
                 "/${ACCOUNT_TYPE}/${OWNER}/packages/maven/${encoded_package_name}/versions/${version_id}" 2>&1)
+            local delete_exit_code=$?
             response=$(sanitize_output "${response}")
-            
-            if [ $? -eq 0 ]; then
+
+            if [ ${delete_exit_code} -eq 0 ]; then
                 log "SUCCESS" "Deleted ${package_name}:${VERSION}"
                 versions_deleted=$((versions_deleted + 1))
             else
-                log "ERROR" "Failed to delete ${package_name}:${VERSION} - $(sanitize_output "${response}")"
+                log "ERROR" "Failed to delete ${package_name}:${VERSION} - ${response}"
             fi
         fi
     else
