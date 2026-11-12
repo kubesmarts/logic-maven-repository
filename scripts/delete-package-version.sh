@@ -81,7 +81,7 @@ log() {
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     
     case "$level" in
-        ERROR)   color="${RED}"; ((errors_count++)) ;;
+        ERROR)   color="${RED}"; errors_count=$((errors_count + 1)) ;;
         SUCCESS) color="${GREEN}" ;;
         WARNING) color="${YELLOW}" ;;
         INFO)    color="${CYAN}" ;;
@@ -141,11 +141,11 @@ fetch_packages() {
         
         # Capture both stdout and stderr
         local response
+        local gh_exit_code=0
         response=$(gh api \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "${api_url}" 2>&1)
-        local gh_exit_code=$?
+            "${api_url}" 2>&1) || gh_exit_code=$?
         response=$(sanitize_output "${response}")
         
         # Check if gh command failed
@@ -240,7 +240,7 @@ fetch_packages() {
             fi
         done <<< "${packages}"
         
-        ((page++))
+        page=$((page + 1))
     done
     
     packages_found=${#all_packages[@]}
@@ -266,11 +266,11 @@ delete_package_version() {
     
     # Fetch versions with error handling
     local versions_response
+    local api_exit_code=0
     versions_response=$(gh api \
         -H "Accept: application/vnd.github+json" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
-        "${api_endpoint}" 2>&1)
-    local api_exit_code=$?
+        "${api_endpoint}" 2>&1) || api_exit_code=$?
     versions_response=$(sanitize_output "${versions_response}")
     
     if [ ${api_exit_code} -ne 0 ]; then
@@ -283,30 +283,28 @@ delete_package_version() {
         jq -r ".[] | select(.name == \"${VERSION}\") | .id" 2>/dev/null || echo "")
     
     if [ -n "${version_id}" ]; then
-        ((packages_with_version++))
+        packages_with_version=$((packages_with_version + 1))
         log "INFO" "Found ${VERSION} (ID: ${version_id})"
         
         if [ "$DRY_RUN" = true ]; then
             log "INFO" "[DRY-RUN] Would delete: ${package_name}:${VERSION}"
-            ((versions_deleted++))
+            versions_deleted=$((versions_deleted + 1))
         else
             local response
+            local delete_exit_code=0
             response=$(gh api \
                 -X DELETE \
                 -H "Accept: application/vnd.github+json" \
                 -H "X-GitHub-Api-Version: 2022-11-28" \
-                "/${ACCOUNT_TYPE}/${OWNER}/packages/maven/${encoded_package_name}/versions/${version_id}" 2>&1)
-            local delete_exit_code=$?
+                "/${ACCOUNT_TYPE}/${OWNER}/packages/maven/${encoded_package_name}/versions/${version_id}" 2>&1) || delete_exit_code=$?
             response=$(sanitize_output "${response}")
 
             if [ ${delete_exit_code} -eq 0 ]; then
                 log "SUCCESS" "Deleted ${package_name}:${VERSION}"
-                ((versions_deleted++))
+                versions_deleted=$((versions_deleted + 1))
             else
                 log "ERROR" "Failed to delete ${package_name}:${VERSION} - ${response}"
             fi
-
-            [ ${current} -lt ${total} ]
         fi
     else
         log "INFO" "No ${VERSION} in ${package_name}"
@@ -341,7 +339,9 @@ print_summary() {
         log "INFO" "No versions found to delete"
     fi
     
-    [ ${errors_count} -gt 0 ] && log "WARNING" "${errors_count} error(s) occurred"
+    if [ ${errors_count} -gt 0 ]; then
+        log "WARNING" "${errors_count} error(s) occurred"
+    fi
 }
 
 ################################################################################
@@ -423,7 +423,7 @@ main() {
     local current=0
     while IFS= read -r package; do
         if [ -n "${package}" ]; then
-            ((current++))
+            current=$((current + 1))
             delete_package_version "${package}" ${current} ${packages_found}
         fi
     done <<< "${packages}"
