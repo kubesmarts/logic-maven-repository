@@ -106,10 +106,10 @@ check_prerequisites() {
         exit 1
     fi
     
-#    if ! gh auth status &> /dev/null; then
-#        log "ERROR" "GitHub CLI not authenticated. Run 'gh auth login'"
-#        exit 1
-#    fi
+    if ! gh auth status &> /dev/null; then
+        log "ERROR" "GitHub CLI not authenticated. Run 'gh auth login'"
+        exit 1
+    fi
     
     if ! command -v jq &> /dev/null; then
         log "ERROR" "jq not installed. Install with: brew install jq (macOS) or apt-get install jq (Linux)"
