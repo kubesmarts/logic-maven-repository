@@ -22,7 +22,7 @@
 ################################################################################
 
 # Configuration
-readonly USERNAME="requiredusername"
+readonly USERNAME="kubesmarts"
 readonly PACKAGE_TYPE="maven"
 readonly LOG_FILE="deletion-log.txt"
 readonly DELAY_SECONDS=1
@@ -133,15 +133,17 @@ fetch_packages() {
     
     while true; do
         # Fetch packages with pagination
-        local response=$(gh api \
+        local response
+        response=$(gh api \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "/users/${USERNAME}/packages?package_type=${PACKAGE_TYPE}&per_page=${per_page}&page=${page}" 2>&1)
-        
+        local fetch_exit_code=$?
+
         # Sanitize response immediately after capture
         response=$(sanitize_output "${response}")
-        
-        if [ $? -ne 0 ]; then
+
+        if [ ${fetch_exit_code} -ne 0 ]; then
             log_error "Failed to fetch packages: ${response}"
             exit 1
         fi
@@ -189,16 +191,18 @@ delete_package() {
     log_message "Attempting to delete package: ${package_name}"
     
     # Attempt to delete the package
-    local response=$(gh api \
+    local response
+    response=$(gh api \
         -X DELETE \
         -H "Accept: application/vnd.github+json" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
         "/users/${USERNAME}/packages/${PACKAGE_TYPE}/${package_name}" 2>&1)
-    
+    local delete_exit_code=$?
+
     # Sanitize response immediately after capture
     response=$(sanitize_output "${response}")
-    
-    if [ $? -eq 0 ]; then
+
+    if [ ${delete_exit_code} -eq 0 ]; then
         log_success "Deleted package: ${package_name}"
         ((successful_deletions++))
     else
