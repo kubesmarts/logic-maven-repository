@@ -141,11 +141,11 @@ fetch_packages() {
         
         # Capture both stdout and stderr
         local response
+        local gh_exit_code=0
         response=$(gh api \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "${api_url}" 2>&1)
-        local gh_exit_code=$?
+            "${api_url}" 2>&1) || gh_exit_code=$?
         response=$(sanitize_output "${response}")
         
         # Check if gh command failed
@@ -266,11 +266,11 @@ delete_package_version() {
     
     # Fetch versions with error handling
     local versions_response
+    local api_exit_code=0
     versions_response=$(gh api \
         -H "Accept: application/vnd.github+json" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
-        "${api_endpoint}" 2>&1)
-    local api_exit_code=$?
+        "${api_endpoint}" 2>&1) || api_exit_code=$?
     versions_response=$(sanitize_output "${versions_response}")
     
     if [ ${api_exit_code} -ne 0 ]; then
@@ -291,12 +291,12 @@ delete_package_version() {
             versions_deleted=$((versions_deleted + 1))
         else
             local response
+            local delete_exit_code=0
             response=$(gh api \
                 -X DELETE \
                 -H "Accept: application/vnd.github+json" \
                 -H "X-GitHub-Api-Version: 2022-11-28" \
-                "/${ACCOUNT_TYPE}/${OWNER}/packages/maven/${encoded_package_name}/versions/${version_id}" 2>&1)
-            local delete_exit_code=$?
+                "/${ACCOUNT_TYPE}/${OWNER}/packages/maven/${encoded_package_name}/versions/${version_id}" 2>&1) || delete_exit_code=$?
             response=$(sanitize_output "${response}")
 
             if [ ${delete_exit_code} -eq 0 ]; then
